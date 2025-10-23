@@ -139,3 +139,39 @@ function check_cpu_speed() {
 
     return 0
 }
+
+function check_psu_status() {
+    local output psu_count=0 failed_count=0
+    local psu_name psu_status
+    
+    # Get all sensor readings
+    output=$(ipmitool sdr list 2>/dev/null)
+    if [[ $? -ne 0 ]]; then
+        die 1 "$FUNCNAME: Failed to read sensor data via ipmitool"
+    fi
+    
+    # Look for PSU sensors and check their status
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^PS[0-9]+ ]]; then
+            psu_count=$((psu_count + 1))
+            psu_name=$(echo "$line" | awk '{print $1}')
+            psu_status=$(echo "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/, "", $3); print $3}')
+            
+            dbg "$FUNCNAME: Found PSU $psu_name with status: $psu_status"
+            
+            # Check if PSU status is "ok" (case insensitive)
+            if [[ "${psu_status,,}" != "ok" ]]; then
+                die 1 "$FUNCNAME: PSU $psu_name status is '$psu_status' (expected 'ok')"
+                failed_count=$((failed_count + 1))
+            fi
+        fi
+    done <<< "$output"
+    
+    # Check if we found any PSUs
+    if [[ $psu_count -eq 0 ]]; then
+        die 1 "$FUNCNAME: No PSU sensors (PS1, PS2, etc.) found in ipmitool output"
+    fi
+    
+    dbg "$FUNCNAME: All $psu_count PSU(s) are reporting 'ok' status"
+    return 0
+}
